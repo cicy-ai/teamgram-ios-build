@@ -1,0 +1,122 @@
+name: teamgram-ios unsigned IPA
+
+# Builds teamgram/teamgram-ios (teamgram2 branch, Telegram 12.5) pointed at the
+# self-hosted teamgram-server, and publishes an unsigned IPA for Sideloadly.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: teamgram-ios branch/tag/sha
+        default: teamgram2
+      server_ip:
+        description: seed DC address (port 10443 is hardcoded upstream)
+        default: 38.182.96.3
+
+concurrency:
+  group: teamgram-ios
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 360
+    env:
+      SOURCE_DIR: /Users/Shared/telegram-ios
+      BAZEL_USER_ROOT: /private/var/tmp/_bazel_containerhost
+      CACHE_DIR: /Users/runner/telegram-bazel-cache
+    steps:
+      - name: Checkout teamgram-ios
+        uses: actions/checkout@v4
+        with:
+          repository: teamgram/teamgram-ios
+          ref: ${{ inputs.ref }}
+          submodules: recursive
+          fetch-depth: 0
+          path: src
+
+      - name: Select Xcode from versions.json
+        run: |
+          XCODE_VERSION=$(python3 -c 'import json;print(json.load(open("src/versions.json"))["xcode"])')
+          echo "Xcode $XCODE_VERSION"
+          sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          xcodebuild -version
+          # Free disk: drop every other Xcode (~10 GB each); the bazel build needs the room.
+          for x in /Applications/Xcode_*.app; do
+            case "$x" in "/Applications/Xcode_${XCODE_VERSION}.app"|"/Applications/Xcode_${XCODE_VERSION}.0.app") ;; *) sudo rm -rf "$x" & ;; esac
+          done
+          wait
+          df -h /
+
+      - name: Point client at self-hosted server
+        working-directory: src
+        run: |
+          f=submodules/TelegramCore/Sources/Network/Network.swift
+          sed -i '' 's/"43\.155\.11\.190"/"${{ inputs.server_ip }}"/g' "$f"
+          grep -n '${{ inputs.server_ip }}' "$f"
+          if grep -q '43\.155\.11\.190' "$f"; then echo "patch incomplete"; exit 1; fi
+
+      - name: Canonical source directory
+        run: |
+          sudo mkdir -p /Users/Shared
+          sudo chown "$USER" /Users/Shared
+          mv "$GITHUB_WORKSPACE/src" "$SOURCE_DIR"
+
+      - name: Restore bazel cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CACHE_DIR }}
+          key: bazel-${{ inputs.ref }}-${{ github.run_id }}
+          restore-keys: |
+            bazel-${{ inputs.ref }}-
+            bazel-
+
+      - name: Build
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          set -x
+          APP_VERSION=$(python3 -c 'import json;print(json.load(open("versions.json"))["app"])')
+          BUILD_NUMBER=$(( $(git rev-list --count HEAD) + $(cat build_number_offset) ))
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+
+          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+          python3 -u build-system/Make/Make.py \
+            --bazelUserRoot="$BAZEL_USER_ROOT" \
+            --cacheDir="$CACHE_DIR" \
+            --overrideXcodeVersion \
+            build \
+            --configurationPath=build-system/appstore-configuration.json \
+            --codesigningInformationPath=build-system/fake-codesigning \
+            --configuration=release_arm64 \
+            --buildNumber="$BUILD_NUMBER"
+
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          cp bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa \
+            "$GITHUB_WORKSPACE/out/teamgram-${APP_VERSION}-${BUILD_NUMBER}.ipa"
+          ls -la "$GITHUB_WORKSPACE/out"
+
+      - name: Save bazel cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CACHE_DIR }}
+          key: bazel-${{ inputs.ref }}-${{ github.run_id }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: teamgram-ipa
+          path: out/*.ipa
+          retention-days: 30
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="ios-${APP_VERSION}-${BUILD_NUMBER}-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" out/*.ipa \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "teamgram iOS ${APP_VERSION} (${BUILD_NUMBER})" \
+            --notes "Unsigned build of teamgram-ios@${{ inputs.ref }}, seed DC ${{ inputs.server_ip }}:10443. Re-sign with Sideloadly."
+    permissions:
+      contents: write

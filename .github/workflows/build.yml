@@ -45,6 +45,11 @@ jobs:
             case "$x" in "/Applications/Xcode_${XCODE_VERSION}.app"|"/Applications/Xcode_${XCODE_VERSION}.0.app") ;; *) sudo rm -rf "$x" & ;; esac
           done
           wait
+          # Some genrules (e.g. third-party/dav1d) hardcode /Applications/Xcode.app as sysroot;
+          # it was a symlink to the (now removed) default Xcode, so repoint it.
+          sudo rm -rf /Applications/Xcode.app
+          sudo ln -s "/Applications/Xcode_${XCODE_VERSION}.app" /Applications/Xcode.app
+          ls /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/
           df -h /
 
       - name: Point client at self-hosted server

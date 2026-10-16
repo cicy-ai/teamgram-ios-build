@@ -96,8 +96,10 @@ jobs:
             --buildNumber="$BUILD_NUMBER"
 
           mkdir -p "$GITHUB_WORKSPACE/out"
-          cp bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa \
-            "$GITHUB_WORKSPACE/out/teamgram-${APP_VERSION}-${BUILD_NUMBER}.ipa"
+          # bazel 8 reports the output as bazel-bin/Telegram/Telegram.ipa
+          IPA=$(ls bazel-bin/Telegram/Telegram.ipa bazel-out/*/bin/Telegram/Telegram.ipa 2>/dev/null | head -1)
+          test -n "$IPA"
+          cp -L "$IPA" "$GITHUB_WORKSPACE/out/teamgram-${APP_VERSION}-${BUILD_NUMBER}.ipa"
           ls -la "$GITHUB_WORKSPACE/out"
 
       - name: Save bazel cache

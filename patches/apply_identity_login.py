@@ -209,4 +209,17 @@ patch(f"{SRC}/AuthorizationSequenceController.swift", [
 
     private func updateState(state: InnerState) {'''),
 ])
+# ---------------------------------------------------------------- sideloading without App Groups
+# Free-account re-signing (Sideloadly) drops the App Group entitlement: containerURL() returns nil
+# and AppDelegate bails out ("Error 2" -> black screen). Fall back to the app's own sandbox so the
+# main app works; extensions simply lose shared data.
+patch("submodules/TelegramUI/Sources/AppDelegate.swift", [
+    ("""        let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+""", """        var maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
+        if maybeAppGroupUrl == nil, let fallbackUrl = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("app-group-fallback", isDirectory: true) {
+            let _ = try? FileManager.default.createDirectory(at: fallbackUrl, withIntermediateDirectories: true, attributes: nil)
+            maybeAppGroupUrl = fallbackUrl
+        }
+"""),
+])
 print("OK")

@@ -60,6 +60,16 @@ jobs:
           grep -n '${{ inputs.server_ip }}' "$f"
           if grep -q '43\.155\.11\.190' "$f"; then echo "patch incomplete"; exit 1; fi
 
+      - name: Rebrand to Cat
+        working-directory: src
+        run: |
+          # Info.plist values in BUILD (<string>…</string> only; bazel target names stay "Telegram")
+          perl -0pi -e 's{(<string>)([^<]*)(</string>)}{ my ($a,$b,$c)=($1,$2,$3); $b =~ s/\bTeamgram\b/Cat/g; $b =~ s/\bTelegram\b/Cat/g; "$a$b$c" }ge' Telegram/BUILD
+          # localized strings: rewrite only the value side of  "key" = "value";
+          find Telegram/Telegram-iOS -name '*.strings' -path '*.lproj/*' -print0 | xargs -0 perl -pi -e 's{^(\s*"(?:[^"\\]|\\.)*"\s*=\s*")((?:[^"\\]|\\.)*)(";)}{ my ($a,$b,$c)=($1,$2,$3); $b =~ s/\bTeamgram\b/Cat/g; $b =~ s/\bTelegram\b/Cat/g; "$a$b$c" }e'
+          grep -n 'CFBundleDisplayName' -A1 Telegram/BUILD | head -4
+          grep -c '\bTeamgram\b' Telegram/Telegram-iOS/en.lproj/Localizable.strings || true
+
       - name: Canonical source directory
         run: |
           sudo mkdir -p /Users/Shared

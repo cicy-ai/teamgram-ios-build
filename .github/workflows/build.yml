@@ -79,6 +79,10 @@ jobs:
           grep -n 'CFBundleDisplayName' -A1 Telegram/BUILD | head -4
           grep -c '\bTeamgram\b' Telegram/Telegram-iOS/en.lproj/Localizable.strings || true
 
+      - name: Cat app icon
+        working-directory: src
+        run: sh "$GITHUB_WORKSPACE/build-repo/patches/apply_icon.sh"
+
       - name: Canonical source directory
         run: |
           sudo mkdir -p /Users/Shared
@@ -99,7 +103,8 @@ jobs:
         run: |
           set -x
           APP_VERSION=$(python3 -c 'import json;print(json.load(open("versions.json"))["app"])')
-          BUILD_NUMBER=$(( $(git rev-list --count HEAD) + $(cat build_number_offset) ))
+          # monotonic per CI run so a newer IPA always installs over the older one
+          BUILD_NUMBER=$(( $(git rev-list --count HEAD) + $(cat build_number_offset) + GITHUB_RUN_NUMBER ))
           echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
 
@@ -118,7 +123,7 @@ jobs:
           # bazel 8 reports the output as bazel-bin/Telegram/Telegram.ipa
           IPA=$(ls bazel-bin/Telegram/Telegram.ipa bazel-out/*/bin/Telegram/Telegram.ipa 2>/dev/null | head -1)
           test -n "$IPA"
-          cp -L "$IPA" "$GITHUB_WORKSPACE/out/teamgram-${APP_VERSION}-${BUILD_NUMBER}.ipa"
+          cp -L "$IPA" "$GITHUB_WORKSPACE/out/Cat-${APP_VERSION}-${BUILD_NUMBER}.ipa"
           ls -la "$GITHUB_WORKSPACE/out"
 
       - name: Save bazel cache
@@ -142,7 +147,7 @@ jobs:
           TAG="ios-${APP_VERSION}-${BUILD_NUMBER}-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" out/*.ipa \
             --repo "$GITHUB_REPOSITORY" \
-            --title "teamgram iOS ${APP_VERSION} (${BUILD_NUMBER})" \
+            --title "Cat iOS ${APP_VERSION} (${BUILD_NUMBER})" \
             --notes "Unsigned build of teamgram-ios@${{ inputs.ref }}, seed DC ${{ inputs.server_ip }}:10443. Re-sign with Sideloadly."
     permissions:
       contents: write

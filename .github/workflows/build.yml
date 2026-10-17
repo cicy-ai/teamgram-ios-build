@@ -25,6 +25,11 @@ jobs:
       BAZEL_USER_ROOT: /private/var/tmp/_bazel_containerhost
       CACHE_DIR: /Users/runner/telegram-bazel-cache
     steps:
+      - name: Checkout build repo (patches)
+        uses: actions/checkout@v4
+        with:
+          path: build-repo
+
       - name: Checkout teamgram-ios
         uses: actions/checkout@v4
         with:
@@ -59,6 +64,10 @@ jobs:
           sed -i '' 's/"43\.155\.11\.190"/"${{ inputs.server_ip }}"/g' "$f"
           grep -n '${{ inputs.server_ip }}' "$f"
           if grep -q '43\.155\.11\.190' "$f"; then echo "patch incomplete"; exit 1; fi
+
+      - name: Email / username login (Cat)
+        working-directory: src
+        run: python3 "$GITHUB_WORKSPACE/build-repo/patches/apply_identity_login.py"
 
       - name: Rebrand to Cat
         working-directory: src

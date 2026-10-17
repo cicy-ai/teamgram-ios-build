@@ -222,4 +222,14 @@ patch("submodules/TelegramUI/Sources/AppDelegate.swift", [
         }
 """),
 ])
+# ---------------------------------------------------------------- sideloading: no Siri / iCloud entitlements
+# Free-account re-signing strips com.apple.developer.siri / iCloud; with them enabled the app calls
+# INPreferences.siriAuthorizationStatus() at launch and aborts (missing entitlement exception).
+import json
+cfg_path = "build-system/appstore-configuration.json"
+cfg = json.load(open(cfg_path))
+cfg["enable_siri"] = False
+cfg["enable_icloud"] = False
+json.dump(cfg, open(cfg_path, "w"), indent=1)
+print("patched", cfg_path, "(siri/icloud off)")
 print("OK")
